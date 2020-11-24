@@ -215,6 +215,42 @@ def run_command_list(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE, *
     return pipes.returncode, stdout_result, stderr_result
 
 
+def run_check(cmd, **kwargs):
+    """
+    Run a command (input required to be a list), log the output, and raise an
+    exception if a non-zero exit status code is returned.
+    """
+    cmd = run_sanitize(cmd)
+    logger.debug("running cmd: %s", ' '.join(cmd))
+    try:
+        code, stdout, stderr = run_command_list(cmd, **kwargs)
+    except FileNotFoundError:
+        msg = "unable to run command. Executable does not exist or not availabe in path"
+        raise CommandException(cmd, 1, '', '', msg=msg)
+
+    try:
+        stdout = stdout.decode('utf-8')
+        stderr = stderr.decode('utf-8')
+    except AttributeError:
+        # it is a str already, no need to decode
+        pass
+
+    stdout_stream = stdout.splitlines()
+    stderr_stream = stderr.splitlines()
+
+    # Always log stdout as debug
+    for line in stdout_stream:
+        logger.debug(line)
+
+    if code != 0:
+        # When non-zero exit status returns, log stderr as error
+        for line in stderr_stream:
+            logger.error(line)
+        raise CommandException(cmd, code, stdout, stderr)
+
+    return stdout, stderr
+
+
 def run_command(cmdstr, **kwargs):
     return run_command_list(shlex.split(cmdstr), **kwargs)
 
@@ -243,10 +279,32 @@ def get_threadbased_id(guarantee_uniq=False):
 
     return '{}:{}:{}:{}'.format(platform.node(), os.getpid(), str(threading.get_ident()),uuid.uuid4().hex if guarantee_uniq else '')
 
+
 class AnchoreException(Exception):
 
     def to_dict(self):
         return {self.__class__.__name__: dict((key, value) for key, value in vars(self).items() if not key.startswith('_'))}
+
+
+class CommandException(Exception):
+    """
+    An exception raised when subprocess.Popen calls have non-zero exit status.
+    Capture useful information as part of the exception raised
+    """
+
+    def __init__(self, cmd, code, stdout, stderr, msg=None):
+        self.msg = msg or "Non-zero exit status code when running subprocess"
+        self.cmd = ' '.join(cmd) if isinstance(cmd, list) else cmd
+        self.code = code
+        self.stderr = stderr
+        self.stdout = stdout
+
+    def __repr__(self):
+        return "{}: cmd={}, rc={}".format(self.msg, self.cmd, self.code)
+
+    def __str__(self):
+        return "{}: cmd={}, rc={}".format(self.msg, self.cmd, self.code)
+
 
 def ensure_bytes(obj):
     return obj.encode('utf-8') if type(obj) != bytes else obj
