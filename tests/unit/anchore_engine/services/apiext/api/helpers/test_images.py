@@ -1,6 +1,6 @@
 import pytest
 
-from anchore_engine.services.apiext.api.helpers.image_content_response import (
+from anchore_engine.common.helpers import (
     _build_os_response,
     _build_npm_response,
     _build_gem_response,

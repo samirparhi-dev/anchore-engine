@@ -32,7 +32,6 @@ from anchore_engine.services.apiext.api.controllers.utils import (
     normalize_image_add_source,
     validate_image_add_source,
 )
-from anchore_engine.services.apiext.api import helpers
 
 from anchore_engine.subsys.metrics import flask_metrics
 
@@ -497,118 +496,28 @@ def vulnerability_query(
     return return_object, httpcode
 
 
-def get_content(request_inputs, content_type, doformat=False):
-    user_auth = request_inputs["auth"]
-    method = request_inputs["method"]
-    bodycontent = request_inputs["bodycontent"]
+def get_content(request_inputs, content_type):
     params = request_inputs["params"]
-
-    return_object = {}
-    httpcode = 500
-    userId, pw = user_auth
+    http_code = 500
     try:
         localconfig = anchore_engine.configuration.localconfig.get_config()
         all_content_types = localconfig.get(
             "image_content_types", []
         ) + localconfig.get("image_metadata_types", [])
         if content_type not in all_content_types:
-            httpcode = 404
             raise Exception("content type (" + str(content_type) + ") not available")
 
-        tag = params.pop("tag", None)
-        imageDigest = params.pop("imageDigest", None)
-        digest = params.pop("digest", None)
-        logger.debug("Request inputs: {}".format(request_inputs))
+        image_digest = params.pop("imageDigest", None)
         client = internal_client_for(CatalogClient, request_inputs["userId"])
-        image_report = client.get_image(imageDigest)
+        return_object = client.get_image_content(image_digest, content_type)
+        http_code = 200
 
-        if image_report and image_report["analysis_status"] != taskstate.complete_state(
-            "analyze"
-        ):
-            httpcode = 404
-            raise Exception(
-                "image is not analyzed - analysis_status: "
-                + image_report["analysis_status"]
-            )
-
-        imageDigest = image_report["imageDigest"]
-
-        if content_type == "manifest":
-            try:
-                image_manifest_data = client.get_document("manifest_data", imageDigest)
-            except Exception as err:
-                raise make_anchore_exception(
-                    err,
-                    input_message="cannot fetch content data {} from archive".format(
-                        content_type
-                    ),
-                    input_httpcode=500,
-                )
-
-            image_content_data = {"manifest": image_manifest_data}
-        else:
-            try:
-                image_content_data = client.get_document(
-                    "image_content_data", imageDigest
-                )
-            except Exception as err:
-                raise make_anchore_exception(
-                    err,
-                    input_message="cannot fetch content data from archive",
-                    input_httpcode=500,
-                )
-
-            # special handler for dockerfile contents from old method to new
-            if content_type == "dockerfile" and not image_content_data.get(
-                "dockerfile", None
-            ):
-                try:
-                    if image_report.get("dockerfile_mode", None) == "Actual":
-                        for image_detail in image_report.get("image_detail", []):
-                            if image_detail.get("dockerfile", None):
-                                logger.debug(
-                                    "migrating old dockerfile content form into new"
-                                )
-                                image_content_data["dockerfile"] = utils.ensure_str(
-                                    base64.decodebytes(
-                                        utils.ensure_bytes(
-                                            image_detail.get("dockerfile", "")
-                                        )
-                                    )
-                                )
-                                client.put_document(
-                                    user_auth,
-                                    "image_content_data",
-                                    imageDigest,
-                                    image_content_data,
-                                )
-                                break
-                except Exception as err:
-                    logger.warn(
-                        "cannot fetch/decode dockerfile contents from image_detail - {}".format(
-                            err
-                        )
-                    )
-
-            if content_type not in image_content_data:
-                httpcode = 404
-                raise Exception(
-                    "image content of type ("
-                    + str(content_type)
-                    + ") was not an available type at analysis time for this image"
-                )
-
-        return_object[imageDigest] = helpers.make_image_content_response(
-            content_type, image_content_data[content_type]
-        )
-
-        httpcode = 200
     except Exception as err:
         logger.exception("Failed content lookup")
-        return_object = make_response_error(err, in_httpcode=httpcode)
-        httpcode = return_object["httpcode"]
+        return_object = make_response_error(err, in_httpcode=http_code)
+        http_code = return_object["httpcode"]
 
-    return return_object, httpcode
+    return return_object, http_code
 
 
 # repositories
@@ -1059,7 +968,7 @@ def get_image_metadata_by_type(imageDigest, mtype):
             request, default_params={"imageDigest": imageDigest}
         )
 
-        return_object, httpcode = get_content(request_inputs, mtype, doformat=True)
+        return_object, httpcode = get_content(request_inputs, mtype)
         if httpcode == 200:
             return_object = {
                 "imageDigest": imageDigest,
@@ -1109,7 +1018,7 @@ def get_image_content_by_type(imageDigest, ctype):
             request, default_params={"imageDigest": imageDigest}
         )
 
-        return_object, httpcode = get_content(request_inputs, ctype, doformat=True)
+        return_object, httpcode = get_content(request_inputs, ctype)
         if httpcode == 200:
             return_object = {
                 "imageDigest": imageDigest,
