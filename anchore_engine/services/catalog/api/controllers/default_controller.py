@@ -198,15 +198,11 @@ def get_image(imageDigest):
 @flask_metrics.do_not_track()
 @authorizer.requires_account(with_types=INTERNAL_SERVICE_ALLOWED)
 def get_image_content(image_digest, content_type):
-    return_object = {}
     httpcode = 500
 
     try:
-        image_content_data = ApiRequestContextProxy.get_service().get_image_content(
+        return_object = ApiRequestContextProxy.get_service().get_image_content(
             ApiRequestContextProxy.namespace(), content_type, image_digest
-        )
-        return_object[image_digest] = helpers.make_image_content_response(
-            content_type, image_content_data[content_type]
         )
         httpcode = 200
     except Exception as err:

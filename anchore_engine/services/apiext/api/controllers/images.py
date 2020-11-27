@@ -1,40 +1,37 @@
-import json
-import stat
 import datetime
-import time
-import base64
+import io
+import json
 import re
 import tarfile
-import io
+
 from connexion import request
 
-from anchore_engine import utils
 import anchore_engine.apis
+import anchore_engine.common
+import anchore_engine.common.images
+import anchore_engine.configuration.localconfig
+import anchore_engine.subsys.metrics
+from anchore_engine import utils
+from anchore_engine.apis import exceptions as api_exceptions
 from anchore_engine.apis.authorization import (
     get_authorizer,
     RequestingAccountValue,
     ActionBoundPermission,
 )
 from anchore_engine.apis.context import ApiRequestContextProxy
-from anchore_engine.apis import exceptions as api_exceptions
-from anchore_engine.clients.services.policy_engine import PolicyEngineClient
-from anchore_engine.clients.services.catalog import CatalogClient
 from anchore_engine.clients.services import internal_client_for
-import anchore_engine.common
-from anchore_engine.common.helpers import make_response_error, make_anchore_exception
+from anchore_engine.clients.services.catalog import CatalogClient
+from anchore_engine.clients.services.policy_engine import PolicyEngineClient
+from anchore_engine.common.helpers import make_response_error
 from anchore_engine.db.entities.common import anchore_now
-import anchore_engine.common.images
-import anchore_engine.configuration.localconfig
-from anchore_engine.subsys import taskstate, logger
-import anchore_engine.subsys.metrics
-from anchore_engine.utils import parse_dockerimage_string
+from anchore_engine.services.apiext.api import helpers
 from anchore_engine.services.apiext.api.controllers.utils import (
     normalize_image_add_source,
     validate_image_add_source,
 )
-
+from anchore_engine.subsys import taskstate, logger
 from anchore_engine.subsys.metrics import flask_metrics
-
+from anchore_engine.utils import parse_dockerimage_string
 
 authorizer = get_authorizer()
 
@@ -498,6 +495,7 @@ def vulnerability_query(
 
 def get_content(request_inputs, content_type):
     params = request_inputs["params"]
+    return_object = {}
     http_code = 500
     try:
         localconfig = anchore_engine.configuration.localconfig.get_config()
@@ -509,7 +507,10 @@ def get_content(request_inputs, content_type):
 
         image_digest = params.pop("imageDigest", None)
         client = internal_client_for(CatalogClient, request_inputs["userId"])
-        return_object = client.get_image_content(image_digest, content_type)
+        image_content_data = client.get_image_content(image_digest, content_type)
+        return_object[image_digest] = helpers.make_image_content_response(
+            content_type, image_content_data[content_type]
+        )
         http_code = 200
 
     except Exception as err:

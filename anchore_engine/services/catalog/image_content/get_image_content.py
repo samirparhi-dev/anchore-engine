@@ -9,17 +9,6 @@ from anchore_engine.db import db_catalog_image
 from anchore_engine.subsys import taskstate, logger
 
 
-def get_image_content(account_id, image_digest, content_type):
-    if content_type == "manifest":
-        getter = ImageManifestContentGetter(account_id, content_type, image_digest)
-    elif content_type == "dockerfile":
-        getter = ImageDockerfileContentGetter(account_id, content_type, image_digest)
-    else:
-        getter = ImageContentGetter(account_id, content_type, image_digest)
-
-    return getter.get()
-
-
 class ImageContentGetter:
     def __init__(self, account_id, content_type, image_digest):
         self.account_id = account_id
